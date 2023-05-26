@@ -20,13 +20,11 @@ pub fn App(cx: Scope) -> impl IntoView {
 
         // content for this welcome page
         <Router>
-            <main>
                 <Routes>
                 <Route path="" view=|cx| view! { cx, <Home/> }/>
                 <Route path="/counter" view=|cx| view! { cx, <Counter/> }/>
-                <Blog prefix="/blog".to_string() />
+                <Blog prefix="/blog" />
                 </Routes>
-            </main>
         </Router>
     }
 }
@@ -38,8 +36,6 @@ pub fn Home(cx: Scope) -> impl IntoView {
         <ul>
             <li><A href="/counter">"Counter"</A></li>
             <li><A href="/blog">"Blog"</A></li>
-            <li><A href="/about">"About"</A></li>
-            <li><A href="/contact">"Contact"</A></li>
         </ul>
     }
 }

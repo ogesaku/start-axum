@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[component(transparent)]
-pub fn Blog(cx: Scope, prefix: String) -> impl IntoView {
+pub fn Blog(cx: Scope, prefix: &'static str) -> impl IntoView {
     cfg_if! {
         if #[cfg(feature = "ssr")] {
             let _ = GetPost::register();
@@ -15,18 +15,24 @@ pub fn Blog(cx: Scope, prefix: String) -> impl IntoView {
         }
     }
     view! { cx,
-        <Route path=prefix.clone() view=|cx| view!{cx, <Outlet clone:prefix/>} clone:prefix>
-            <Route path="" clone:prefix view=|cx| view! {cx, <PostsListing prefix=prefix.clone()/> } />
-            <Route
-                path="/:id"
-                view=|cx| view! { cx, <Post/> }
-            />
+        <Route path=prefix view=|cx| view!{cx, <Outlet />} >
+            <Route path="" view=move |cx| view! {cx, <PostsListing prefix=prefix.clone()/> } />
+            <Route path="/:id" view=|cx| view! { cx, <Post/> } />
         </Route>
     }
 }
 
 #[component]
-fn PostsListing(cx: Scope, prefix: String) -> impl IntoView {
+fn Wrapper(cx: Scope, children: Children) -> impl IntoView {
+    view! { cx,
+        <p>"HEADER"</p>
+        {children(cx)}
+        <p>"FOOTER"</p>
+    }
+}
+
+#[component]
+fn PostsListing(cx: Scope, prefix: &'static str) -> impl IntoView {
     // load the posts
     let posts = create_resource(cx, || (), |_| async { list_post_metadata().await });
     let posts_view = move || {
@@ -41,10 +47,12 @@ fn PostsListing(cx: Scope, prefix: String) -> impl IntoView {
     };
 
     view! { cx,
-        <h1>"My Great Blog"</h1>
-        <Suspense fallback=move || view! { cx, <p>"Loading posts..."</p> }>
-            <ul>{posts_view}</ul>
-        </Suspense>
+        <Wrapper>
+            <h1>"My Great Blog"</h1>
+            <Suspense fallback=move || view! { cx, <p>"Loading posts..."</p> }>
+                <ul>{posts_view}</ul>
+            </Suspense>
+        </Wrapper>
     }
 }
 
@@ -152,7 +160,7 @@ pub struct PostMetadata {
     title: String,
 }
 
-#[server(ListPostMetadata, "/api/csr")]
+#[server(ListPostMetadata, "/api")]
 pub async fn list_post_metadata() -> Result<Vec<PostMetadata>, ServerFnError> {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     Ok(POSTS
@@ -164,7 +172,7 @@ pub async fn list_post_metadata() -> Result<Vec<PostMetadata>, ServerFnError> {
         .collect())
 }
 
-#[server(GetPost, "/api/csr")]
+#[server(GetPost, "/api")]
 pub async fn get_post(id: usize) -> Result<Option<Post>, ServerFnError> {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     Ok(POSTS.iter().find(|post| post.id == id).cloned())
