@@ -35,7 +35,7 @@ fn Wrapper(cx: Scope, children: Children) -> impl IntoView {
 fn PostsListing(cx: Scope, prefix: &'static str) -> impl IntoView {
     // load the posts
     let posts = create_resource(cx, || (), |_| async { list_post_metadata().await });
-    let posts_view = move || {
+    let posts_view = move |cx| {
         posts.with(cx, |posts| posts
             .clone()
             .map(|posts| {
@@ -50,7 +50,7 @@ fn PostsListing(cx: Scope, prefix: &'static str) -> impl IntoView {
         <Wrapper>
             <h1>"My Great Blog"</h1>
             <Suspense fallback=move || view! { cx, <p>"Loading posts..."</p> }>
-                <ul>{posts_view}</ul>
+                <ul>{posts_view(cx)}</ul>
             </Suspense>
         </Wrapper>
     }
@@ -65,7 +65,7 @@ pub struct PostParams {
 fn Post(cx: Scope) -> impl IntoView {
     let query = use_params::<PostParams>(cx);
     let id = move || query.with(|q| q.as_ref().map(|q| q.id).map_err(|_| PostError::InvalidId));
-    let post = create_resource(cx, id, |id| async move {
+    let post = create_blocking_resource(cx, id, |id| async move {
         match id {
             Err(e) => Err(e),
             Ok(id) => get_post(id)
@@ -75,18 +75,12 @@ fn Post(cx: Scope) -> impl IntoView {
                 .flatten(),
         }
     });
-
-    let post_view = move || {
+    let post_view = move |cx| {
         post.with(cx, |post| {
             post.clone().map(|post| {
                 view! { cx,
-                    // render content
                     <h1>{&post.title}</h1>
                     <p>{&post.content}</p>
-
-                    // since we're using async rendering for this page,
-                    // this metadata should be included in the actual HTML <head>
-                    // when it's first served
                     <Title text=post.title/>
                     <Meta name="description" content=post.content/>
                 }
@@ -94,24 +88,33 @@ fn Post(cx: Scope) -> impl IntoView {
         })
     };
 
-    view! { cx,
-        <Suspense fallback=move || view! { cx, <p>"Loading post..."</p> }>
-            <ErrorBoundary fallback=|cx, errors| {
+    let comments = create_resource(cx, id, |id| async move {
+        match id {
+            Err(e) => Err(e),
+            Ok(id) => get_comments(id)
+                .await
+                .map(|data| data.ok_or(PostError::PostNotFound))
+                .map_err(|_| PostError::ServerError)
+                .flatten(),
+        }
+    });
+    let comments_view = move |cx| {
+        comments.with(cx, |comments| {
+            comments.clone().map(|comments| {
                 view! { cx,
-                    <div class="error">
-                        <h1>"Something went wrong."</h1>
-                        <ul>
-                        {move || errors.get()
-                            .into_iter()
-                            .map(|(_, error)| view! { cx, <li>{error.to_string()} </li> })
-                            .collect_view(cx)
-                        }
-                        </ul>
-                    </div>
+                    <h3>"Comments:"</h3>
+                    <p>{&comments.content}</p>
                 }
-            }>
-                {post_view}
-            </ErrorBoundary>
+            })
+        })
+    };
+
+    view! { cx,
+        <Suspense fallback=|| ()>
+            {post_view(cx)}
+        </Suspense>
+        <Suspense fallback=|| "Loading comments...">
+            {comments_view(cx)}
         </Suspense>
     }
 }
@@ -160,6 +163,12 @@ pub struct PostMetadata {
     title: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Comment {
+    id: usize,
+    content: String,
+}
+
 #[server(ListPostMetadata, "/api")]
 pub async fn list_post_metadata() -> Result<Vec<PostMetadata>, ServerFnError> {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -176,4 +185,13 @@ pub async fn list_post_metadata() -> Result<Vec<PostMetadata>, ServerFnError> {
 pub async fn get_post(id: usize) -> Result<Option<Post>, ServerFnError> {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     Ok(POSTS.iter().find(|post| post.id == id).cloned())
+}
+
+#[server(GetComments, "/api")]
+pub async fn get_comments(id: usize) -> Result<Option<Comment>, ServerFnError> {
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    Ok(Some(Comment {
+        id: 1,
+        content: format!("Comment for post: {}", id),
+    }))
 }
