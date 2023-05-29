@@ -1,7 +1,6 @@
 #![feature(result_flattening)]
 use cfg_if::cfg_if;
 pub mod app;
-pub mod blog;
 pub mod error_template;
 pub mod fileserv;
 
